@@ -1,0 +1,7 @@
+{
+  "name": "mf-discovery",
+  "owner": {"name": "Matthias Frank Consulting", "email": "hello@matthiasfrank-consulting.com"},
+  "plugins": [
+    {"name": "ai-work-discovery", "source": "./plugin", "description": "Discovery run: how you work with AI, as a plain-text results folder."}
+  ]
+}

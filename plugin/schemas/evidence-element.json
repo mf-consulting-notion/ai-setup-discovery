@@ -1,0 +1,37 @@
+{
+  "$comment": "One observation. Never a score, never a recommendation. sensitive=true keeps it out of report prose.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "analyser", "dimension", "facet", "value", "statement", "source_kind", "support", "confidence", "codebook_version"],
+  "properties": {
+    "id": {"type": "string", "maxLength": 40},
+    "analyser": {"enum": ["environment", "context_memory", "skills", "connectors", "session_behaviour", "automation", "self_assessment", "intake"]},
+    "dimension": {"enum": ["environment_setup", "knowledge_capture", "skills", "reach", "workflow", "collaboration_pattern", "autonomy",
+                           "friction", "fluency", "collaboration", "model_view"]},
+    "facet": {"type": "string", "maxLength": 50},
+    "value": {"type": ["string", "number", "boolean"]},
+    "statement": {"type": "string", "maxWords": 80},
+    "source_kind": {"enum": ["observed_trace", "config_inspection", "self_report", "model_self_assessment", "derived"]},
+    "support": {
+      "type": "object", "additionalProperties": false, "required": ["window"],
+      "properties": {
+        "sessions": {"type": "integer", "minimum": 0},
+        "of_sessions": {"type": "integer", "minimum": 0},
+        "files": {"type": "integer", "minimum": 0},
+        "window": {"type": "string", "maxLength": 40},
+        "anecdote": {"type": "boolean"}
+      }
+    },
+    "confidence": {
+      "type": "object", "additionalProperties": false, "required": ["evidence"],
+      "properties": {
+        "evidence": {"enum": ["low", "medium", "high"]},
+        "agreement": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+      }
+    },
+    "excerpt": {"type": "string", "maxWords": 25},
+    "sensitive": {"type": "boolean"},
+    "disagrees_with": {"type": "array", "items": {"type": "string", "maxLength": 40}},
+    "codebook_version": {"enum": ["0.3.0"]}
+  }
+}

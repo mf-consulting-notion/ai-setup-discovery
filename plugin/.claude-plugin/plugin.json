@@ -1,0 +1,10 @@
+{
+  "name": "ai-work-discovery",
+  "version": "1.0.1",
+  "description": "A discovery run: looks at how you work with AI (your own sessions, setup and tools) and produces a plain-text results folder for your consultant. Read-only; nothing leaves your machine unless you send it.",
+  "author": {
+    "name": "Matthias Frank Consulting",
+    "email": "hello@matthiasfrank-consulting.com"
+  },
+  "license": "SEE LICENSE IN LICENSE.md"
+}

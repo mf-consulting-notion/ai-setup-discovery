@@ -1,0 +1,11 @@
+{
+  "description": "Pre-approve the discovery run's own read-only scripts and run-folder writes, so the participant approves once (in the briefing), not hundreds of times.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Glob|Grep|Write|Edit",
+        "hooks": [{"type": "command", "command": "python3 -I \"${CLAUDE_PLUGIN_ROOT}/scripts/allow_own.py\"", "timeout": 10}]
+      }
+    ]
+  }
+}

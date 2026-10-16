@@ -1,0 +1,377 @@
+{
+  "$comment": "Session map record, codebook 0.3.0. One per session; paraphrase only, no verbatim text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session",
+    "surface",
+    "work_kind",
+    "work_category",
+    "work_label",
+    "workflow",
+    "pipeline_stage",
+    "start_trigger",
+    "skills_invoked",
+    "interaction_mode",
+    "supervision_markers",
+    "gates_stated",
+    "outcome",
+    "friction",
+    "corrections",
+    "restatements",
+    "inbound_sources",
+    "artefact_destinations",
+    "systems_mentioned",
+    "fluency",
+    "dictation_markers",
+    "gist"
+  ],
+  "properties": {
+    "session": {
+      "type": "string",
+      "maxLength": 12
+    },
+    "surface": {
+      "enum": [
+        "claude_code",
+        "cowork",
+        "codex",
+        "chat"
+      ]
+    },
+    "work_kind": {
+      "enum": [
+        "client_work",
+        "internal_product",
+        "content_marketing",
+        "business_admin",
+        "personal",
+        "ai_setup_meta",
+        "unclear"
+      ]
+    },
+    "work_category": {
+      "enum": [
+        "coding",
+        "ops_infra",
+        "writing_content",
+        "research",
+        "planning_design",
+        "data_analysis",
+        "admin_finance",
+        "client_delivery",
+        "communication",
+        "ai_setup_meta",
+        "other"
+      ]
+    },
+    "work_label": {
+      "type": "string",
+      "maxWords": 8
+    },
+    "workflow": {
+      "enum": [
+        "plan_then_build",
+        "grill_decisions",
+        "content_production",
+        "research_writeup",
+        "debug_fix",
+        "config_maintenance",
+        "ops_change",
+        "admin_close",
+        "client_deliverable",
+        "triage_and_dispatch",
+        "quick_question",
+        "document_review",
+        "data_extraction",
+        "other"
+      ]
+    },
+    "pipeline_stage": {
+      "enum": [
+        "decide",
+        "plan",
+        "build",
+        "review",
+        "close_out",
+        "operate",
+        "produce",
+        "research",
+        "admin"
+      ]
+    },
+    "start_trigger": {
+      "enum": [
+        "fresh_prompt",
+        "handoff_doc",
+        "slash_skill",
+        "resumed",
+        "automated",
+        "pasted_material"
+      ]
+    },
+    "skills_invoked": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "maxLength": 60
+      }
+    },
+    "interaction_mode": {
+      "enum": [
+        "directive",
+        "directive_plan_execution",
+        "feedback_loop",
+        "task_iteration",
+        "learning",
+        "validation"
+      ]
+    },
+    "supervision_markers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approval_requests",
+        "participant_turns",
+        "ran_unattended"
+      ],
+      "properties": {
+        "approval_requests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "participant_turns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ran_unattended": {
+          "type": "boolean"
+        }
+      }
+    },
+    "gates_stated": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "explicit_go_before_live",
+          "drafts_only_outbound",
+          "no_secrets_or_names",
+          "ask_before_spend",
+          "other"
+        ]
+      }
+    },
+    "outcome": {
+      "enum": [
+        "achieved",
+        "mostly",
+        "partial",
+        "not_achieved",
+        "unclear"
+      ]
+    },
+    "friction": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "cause",
+          "caught_at",
+          "avoidable",
+          "instance"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "connector_gap",
+              "shell_hang",
+              "local_unlock",
+              "network",
+              "browser_extension",
+              "permission_churn",
+              "misunderstood_request",
+              "wrong_approach",
+              "model_overreach",
+              "slow_or_looping",
+              "repeated_context",
+              "missing_access",
+              "output_quality"
+            ]
+          },
+          "cause": {
+            "enum": [
+              "tooling",
+              "access",
+              "instructions",
+              "model",
+              "participant_input",
+              "external_wait"
+            ]
+          },
+          "caught_at": {
+            "enum": [
+              "plan",
+              "build",
+              "review",
+              "live"
+            ]
+          },
+          "avoidable": {
+            "enum": [
+              "yes",
+              "no",
+              "unclear"
+            ]
+          },
+          "instance": {
+            "type": "string",
+            "maxWords": 20
+          }
+        }
+      }
+    },
+    "corrections": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "instance"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "instance": {
+            "type": "string",
+            "maxWords": 15
+          }
+        }
+      }
+    },
+    "restatements": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "paraphrase"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "paraphrase": {
+            "type": "string",
+            "maxWords": 20
+          }
+        }
+      }
+    },
+    "inbound_sources": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 40
+      }
+    },
+    "artefact_destinations": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "notion_page",
+          "notion_db_row",
+          "repo",
+          "local_file",
+          "document",
+          "draft_message",
+          "sent_message",
+          "external_system",
+          "chat_only",
+          "none"
+        ]
+      }
+    },
+    "systems_mentioned": {
+      "type": "array",
+      "maxItems": 15,
+      "items": {
+        "type": "string",
+        "maxLength": 40
+      }
+    },
+    "fluency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "iterates",
+        "clarifies_goal",
+        "provides_examples",
+        "specifies_format",
+        "sets_interaction_mode",
+        "sets_tone",
+        "specifies_audience",
+        "asks_for_missing_context",
+        "questions_reasoning",
+        "checks_facts",
+        "consults_on_approach"
+      ],
+      "properties": {
+        "iterates": {
+          "type": "boolean"
+        },
+        "clarifies_goal": {
+          "type": "boolean"
+        },
+        "provides_examples": {
+          "type": "boolean"
+        },
+        "specifies_format": {
+          "type": "boolean"
+        },
+        "sets_interaction_mode": {
+          "type": "boolean"
+        },
+        "sets_tone": {
+          "type": "boolean"
+        },
+        "specifies_audience": {
+          "type": "boolean"
+        },
+        "asks_for_missing_context": {
+          "type": "boolean"
+        },
+        "questions_reasoning": {
+          "type": "boolean"
+        },
+        "checks_facts": {
+          "type": "boolean"
+        },
+        "consults_on_approach": {
+          "type": "boolean"
+        }
+      }
+    },
+    "dictation_markers": {
+      "enum": [
+        "clear",
+        "some",
+        "none"
+      ]
+    },
+    "gist": {
+      "type": "string",
+      "maxWords": 60
+    }
+  }
+}
