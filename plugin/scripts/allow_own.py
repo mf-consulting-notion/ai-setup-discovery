@@ -3,6 +3,7 @@
 isn't asked hundreds of times (the briefing's acceptance is the approval).
 
 Allows exactly:
+  - Bash: `open` / `explorer` on a run folder itself, to show the participant their results
   - Bash: `<python> -I <this plugin>/scripts/<discover|map_loop|sanitize|check_bundle>.py <args>` with no
     shell operators, plus map_loop's `submit ... <<'JSON'` quoted heredoc (its body is never expanded)
   - Read / Glob / Grep under ~/.claude, ~/.codex, the Cowork folder, this plugin, and run folders
@@ -24,6 +25,7 @@ HOME = Path.home().resolve()
 SCRIPTS = ("discover", "map_loop", "sanitize", "check_bundle")
 PY = r"(?:python3|python|py -3|/usr/bin/python3)"   # bare names resolve via PATH; no arbitrary executables
 AGENT = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+RUN_NAME = re.compile(r"ai-work-discovery-\d{8}-\d{4}")
 OPS = re.compile(r"[;&|`$<>(){}\n\r]")
 
 
@@ -85,9 +87,35 @@ def _args_ok(script: str, argv: list) -> bool:
     return True
 
 
+def opens_run_folder(cmd: str) -> bool:
+    """`open <run folder>` (macOS) or `explorer <run folder>` (Windows): shows the results, nothing else."""
+    if re.search(r"[$`;&|<>(){}*?!#\r\n]", cmd):
+        return False
+    try:
+        tokens = shlex.split(cmd, posix=os.name != "nt")
+    except ValueError:
+        return False
+    if len(tokens) != 2 or tokens[0] not in ("open", "explorer") or tokens[1].startswith("-"):
+        return False
+    arg = tokens[1][1:-1] if os.name == "nt" and len(tokens[1]) > 1 and tokens[1][0] == tokens[1][-1] == '"' else tokens[1]
+    # check exactly what the shell passes: an absolute literal path, no ~ or leftover quotes to reinterpret
+    if not os.path.isabs(arg) or re.search(r"[~'\"]", arg):
+        return False
+    try:
+        p = Path(arg).resolve()
+    except (OSError, ValueError):
+        return False
+    # the resolved target must be a real run folder made by `discover.py init`: an exact generated name
+    # and its run.json, so an app bundle or script named like a run folder is never launched
+    return bool(p) and p.parent == HOME and RUN_NAME.fullmatch(p.name) is not None \
+        and p.is_dir() and (p / ".local" / "run.json").is_file()
+
+
 def bash_ok(cmd: str) -> bool:
     cmd = cmd.strip()
     if re.fullmatch(r"(?:python3|python|py -3) --version", cmd):
+        return True
+    if opens_run_folder(cmd):
         return True
     first, sep, rest = cmd.partition("\n")
     hd = re.search(r"\s<<\s*'JSON'\s*$", first)

@@ -52,17 +52,18 @@ Permissions: the plugin ships a hook that pre-approves exactly its own scripts (
 
 First draft the **pre-filled self-report**. Read the participant's user-level instructions (`~/.claude/CLAUDE.md`) and the memory indexes (`~/.claude/projects/*/memory/MEMORY.md`, at most 5, picking the largest), plus what you already know about them. Write 4–6 short lines: role, the kinds of work they do, who they work with (as roles, not names), and which AI tools they use. Keep the draft in your context. It goes into `intake.json` as `self_report_drafted`.
 
-Then send **one** message with these parts. Use their language, and keep the whole message to about 20 lines:
+Then send **one** message with these parts. Use their language, and keep the whole message to about 20 lines. The `/usage` step comes first and stands apart from the numbered questions: its output shows only on the participant's screen, so they run it before writing, then answer everything in one reply.
+
+- Before the questions: "**First**, type `/usage`. It only shows on your screen, so please put the two percentages (session and weekly) at the top of your reply. Then answer the questions below in the same message."
 
 1. "Most of your AI work in the last 30 days seems to be in **<surfaces with counts>**. Is that right, or does a lot happen elsewhere (for example in claude.ai chat, ChatGPT or Copilot)?"
-2. "Please type `/usage` and tell me roughly how much is left."
-3. "Here's how I'd describe your work. Correct anything that's off:" followed by the draft.
-4. "To protect other people, I'll hide these folder names in everything I write: <comma-separated list from `hidden_project_folders`>. Are there other names to hide, such as clients, colleagues or companies? And are any of these just ordinary words that are fine to show (like 'bookkeeping')?"
-5. Optional: "One question, only if you like: what do you deliberately keep away from AI, and why?"
-6. "Answer all of it in one go. Dictating is fine, typos are fine."
+2. "Here's how I'd describe your work. Correct anything that's off:" followed by the draft.
+3. "To protect other people, I'll hide these folder names in everything I write: <comma-separated list from `hidden_project_folders`>. Are there other names to hide, such as clients, colleagues or companies? And are any of these just ordinary words that are fine to show (like 'bookkeeping')?"
+4. Optional: "One question, only if you like: what do you deliberately keep away from AI, and why?"
+5. "Answer all of it in one go, with the `/usage` numbers at the top. Dictating is fine, typos are fine."
 
 From the reply:
-- Add every extra name with `PY -I "SCRIPTS/discover.py" aliases --run "RUN" --add "Name=a client"`, using a role that fits: `a client`, `a colleague`, `a company` or `a person`. Add **people and client names they mention anywhere in the reply** as well, not just in point 4.
+- Add every extra name with `PY -I "SCRIPTS/discover.py" aliases --run "RUN" --add "Name=a client"`, using a role that fits: `a client`, `a colleague`, `a company` or `a person`. Add **people and client names they mention anywhere in the reply** as well, not just in point 3.
 - Folder names they say are fine to show: `PY -I "SCRIPTS/discover.py" aliases --run "RUN" --keep "bookkeeping"`.
 - **Usage under 30% left** → light run (`--light`). Tell them in one line. Otherwise run a full run, and don't mention it.
 - If most of their work happens on another surface, note it. Carry on here unless they say otherwise.
@@ -138,9 +139,10 @@ Send one short message:
 - "Your results are ready in `RUN`. Everything in the folder is plain text, and nothing in it runs."
 - Three to five sentences describing what's in the report, neutrally. No verdict.
 - "Would you like to look through it first? You can open `report.md` in any text editor, or I can show it here. If you'd like anything removed, just tell me."
-- "When you're happy, attach the six files (`README.txt`, `report.md`, `manifest.json`, `intake.json`, `elements.jsonl`, `sections.md`, `collectors.json`) to an email to hello@matthiasfrank-consulting.com. The hidden `.local` folder stays with you."
+- "When you're happy, attach the seven files (`README.txt`, `report.md`, `manifest.json`, `intake.json`, `elements.jsonl`, `sections.md`, `collectors.json`) to an email to hello@matthiasfrank-consulting.com. Separate files are fine; there's no need to zip them. The hidden `.local` folder stays with you."
+- "Shall I open the folder for you, so you can select all seven files and drag them into the email?"
 
-If they ask for changes, edit the files, run `sanitize.py` and `check_bundle.py` again, and confirm. If they ask, `open "RUN"` (macOS) or `explorer "RUN"` (Windows) shows the folder.
+If they say yes, run `open "RUN"` (macOS) or `explorer "RUN"` (Windows), exactly in that form. The plugin pre-approves it, so there's no permission prompt. If they ask for changes, edit the files, run `sanitize.py` and `check_bundle.py` again, and confirm.
 
 ## Fallback: no Python
 

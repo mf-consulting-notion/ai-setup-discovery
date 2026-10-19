@@ -42,17 +42,19 @@ Keep the answers as notes, keyed by kind (`past_chats`, `code`, `scripts`, `file
 
 ## 3. Intake: one message, one reply
 
-Draft a **pre-filled self-report** (4–6 lines) from memory and what you know about the participant. Then send one message:
-1. "Where does most of your AI work happen: here in claude.ai chat, the desktop app, Claude Code, ChatGPT, Copilot? Roughly what share?"
-2. "How much of your plan's usage is left? (Settings → Usage)"
-3. "Here's how I'd describe your work. Correct anything that's off:" followed by the draft.
-4. "Are there names I should hide, such as clients, colleagues or companies? I'll replace the ones I come across anyway."
-5. "Does a lot of your AI work live inside Projects? Roughly what share, and what kind of work? I can't see chats inside Projects from here."
-6. Optional: "What do you deliberately keep away from AI, and why?"
-7. **Only if there is no past-chats tool:** "Optional, but it helps a lot: Settings → Privacy → Export data sends you a download link by email. If you upload that file here, I can look at all your chats from the last month, not only this one."
-8. "Answer all of it in one go. Dictating is fine."
+Draft a **pre-filled self-report** (4–6 lines) from memory and what you know about the participant. Then send one message. The usage check comes first and stands apart from the numbered questions, because the participant has to look it up elsewhere before they write:
 
-Record the reply as `intake.json` (the same fields as in the local version, plus `projects_share` and `projects_work` from question 5). If usage is under 30%, run a light version: 15 conversations instead of 40.
+- Before the questions: "**First**, open Settings → Usage. I can't see it from here, so please put roughly how much is left at the top of your reply. Then answer the questions below in the same message."
+
+1. "Where does most of your AI work happen: here in claude.ai chat, the desktop app, Claude Code, ChatGPT, Copilot? Roughly what share?"
+2. "Here's how I'd describe your work. Correct anything that's off:" followed by the draft.
+3. "Are there names I should hide, such as clients, colleagues or companies? I'll replace the ones I come across anyway."
+4. "Does a lot of your AI work live inside Projects? Roughly what share, and what kind of work? I can't see chats inside Projects from here."
+5. Optional: "What do you deliberately keep away from AI, and why?"
+6. **Only if there is no past-chats tool:** "Optional, but it helps a lot: Settings → Privacy → Export data sends you a download link by email. If you upload that file here, I can look at all your chats from the last month, not only this one."
+7. "Answer all of it in one go, with the usage at the top. Dictating is fine."
+
+Record the reply as `intake.json` (the same fields as in the local version, plus `projects_share` and `projects_work` from question 4). If usage is under 30%, run a light version: 15 conversations instead of 40.
 
 If the participant says most of their work happens in Claude Code on their computer, tell them the local version gives a much fuller picture: install the same plugin in Claude Code and run `/ai-work-discovery:discovery-run` there. Carry on here only if they prefer.
 

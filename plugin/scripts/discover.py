@@ -159,11 +159,15 @@ def cmd_aliases(run: Run, a) -> dict:
     shown = {"projects": len(t.projects), "names": len(t.names)}
     if a.get("--show") is not None:
         # The orchestrator shows these to the participant at intake; this is the only place real names are printed.
-        bases = {k.replace("\\", "/").rstrip("/").split("/")[-1] for k in t.projects}
-        # only names that are actually masked (ordinary words like "projects" or "tmp" never are)
-        shown["hidden_project_folders"] = sorted(b for b in bases if evidence._variants(b) and b.lower() not in {k.lower() for k in t.keep})
+        shown["hidden_project_folders"] = _hidden_folders(t)
         shown["hidden_names"] = sorted(t.names)
     return shown
+
+
+def _hidden_folders(t: evidence.AliasTable) -> list:
+    bases = {k.replace("\\", "/").rstrip("/").split("/")[-1] for k in t.projects}
+    # only names that are actually masked (ordinary words like "projects" or "tmp" never are)
+    return sorted(b for b in bases if evidence._variants(b) and b.lower() not in {k.lower() for k in t.keep})
 
 
 # ---------------------------------------------------------------- collectors
@@ -630,6 +634,11 @@ def _manifest(run: Run, cols: dict, n_elements: int) -> dict:
     mp = run.local / "map"
     q = _load(mp / "queue.json") or []
     agg = _load(mp / "aggregate.json") or {}
+    plan = _load(mp / "plan.json") or {}
+    # names are masked as collectors and elements are written, so the final sanitize pass rarely
+    # finds any left; the alias table is the real count of what was hidden
+    t = run.aliases()
+    privacy = {**(notes.get("privacy_pass") or {}), "hidden_project_folders": len(_hidden_folders(t)), "hidden_names": len(t.names)}
     probe = cols.get("probe") or {}
     sources = {}
     for name, data in cols.items():
@@ -644,10 +653,10 @@ def _manifest(run: Run, cols: dict, n_elements: int) -> dict:
         "usage_left_at_start": notes.get("usage_left_at_start"), "run_size": notes.get("run_size", "full"),
         "os": probe.get("os"), "window_days": run.window, "oldest_session_in_window": probe.get("oldest_in_window"),
         "sessions_in_window": probe.get("sessions_in_window"),
-        "session_map": {"eligible": notes.get("map_eligible"), "mapped": agg.get("sessions_mapped"), "queued": len(q),
+        "session_map": {"eligible": plan.get("eligible"), "mapped": agg.get("sessions_mapped"), "queued": len(q),
                         "by_surface": dict(C(x["surface"] for x in q)), "agreement": agg.get("agreement")},
         "sources": sources, "elements": n_elements,
-        "self_assessment": notes.get("self_assessment"), "privacy_pass": notes.get("privacy_pass"),
+        "self_assessment": notes.get("self_assessment"), "privacy_pass": privacy,
         "exclusions": notes.get("exclusions", []), "participant_active_minutes_estimate": notes.get("participant_active_minutes"),
         "wall_minutes": notes.get("wall_minutes"), "problems_during_run": notes.get("problems", []),
     }
