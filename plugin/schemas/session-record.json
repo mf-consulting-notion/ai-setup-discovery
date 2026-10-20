@@ -1,5 +1,5 @@
 {
-  "$comment": "Session map record, codebook 0.3.0. One per session; paraphrase only, no verbatim text.",
+  "$comment": "Session map record, codebook 0.4.0. One per session; paraphrase only, no verbatim text.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -41,13 +41,21 @@
     },
     "work_kind": {
       "enum": [
-        "client_work",
-        "internal_product",
-        "content_marketing",
+        "core_work",
+        "own_tooling",
         "business_admin",
-        "personal",
+        "content_marketing",
         "ai_setup_meta",
+        "personal",
         "unclear"
+      ]
+    },
+    "core_work_area": {
+      "enum": [
+        "deal_sourcing",
+        "deal_execution",
+        "portfolio",
+        "other_core"
       ]
     },
     "work_category": {
@@ -72,15 +80,14 @@
     "workflow": {
       "enum": [
         "plan_then_build",
-        "grill_decisions",
         "content_production",
         "research_writeup",
         "debug_fix",
         "config_maintenance",
-        "ops_change",
-        "admin_close",
-        "client_deliverable",
         "triage_and_dispatch",
+        "correspondence",
+        "modelling_analysis",
+        "deck_document",
         "quick_question",
         "document_review",
         "data_extraction",

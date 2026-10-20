@@ -32,6 +32,6 @@
     "excerpt": {"type": "string", "maxWords": 25},
     "sensitive": {"type": "boolean"},
     "disagrees_with": {"type": "array", "items": {"type": "string", "maxLength": 40}},
-    "codebook_version": {"enum": ["0.3.0"]}
+    "codebook_version": {"enum": ["0.4.0"]}
   }
 }

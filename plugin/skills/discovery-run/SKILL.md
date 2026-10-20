@@ -42,7 +42,7 @@ PY -I "SCRIPTS/discover.py" probe --run "RUN"
 PY -I "SCRIPTS/discover.py" aliases --run "RUN" --show
 ```
 
-The probe says which surfaces have sessions in the last 30 days. If `suggested_path` is `chat` (fewer than 5 local sessions), tell the participant that most of their AI work doesn't seem to happen here. Ask where it does happen. If that's claude.ai or the desktop chat, point them to the chat version: the same plugin, run as `/ai-work-discovery:discovery-run-chat` in a claude.ai chat. Stop here unless they want the local run anyway.
+The probe says which surfaces have sessions in the last 30 days. If `window_coverage_days` is under 14, the transcripts on this machine only go back that far. Add one line to the intake message: "Your AI history on this machine only goes back about N days, so the results cover that period." Use the rounded value of `window_coverage_days` for N. If `suggested_path` is `chat` (fewer than 5 local sessions), tell the participant that most of their AI work doesn't seem to happen here. Ask where it does happen. If that's claude.ai or the desktop chat, point them to the chat version: the same plugin, run as `/ai-work-discovery:discovery-run-chat` in a claude.ai chat. Stop here unless they want the local run anyway.
 
 While the participant reads the intake message below, start the **model self-assessment** in the background (step 5a). It doesn't need their answers.
 
@@ -67,11 +67,12 @@ From the reply:
 - Folder names they say are fine to show: `PY -I "SCRIPTS/discover.py" aliases --run "RUN" --keep "bookkeeping"`.
 - **Usage under 30% left** → light run (`--light`). Tell them in one line. Otherwise run a full run, and don't mention it.
 - If most of their work happens on another surface, note it. Carry on here unless they say otherwise.
-- Write `RUN/intake.json`:
+- Write `RUN/send/intake.json`. Everything the participant sends goes in `RUN/send/`, and nothing else goes next to it:
   ```json
   {"self_report_drafted": "...", "self_report_corrected": "... their corrected version, or the draft if they changed nothing ...",
    "surfaces_reported": "...", "keeps_away_from_ai": "... their words, or null ...", "usage_left_reported": "..."}
   ```
+- Write `RUN/.local/elements/intake.jsonl`, one evidence element per line, with `analyser: "intake"`, `source_kind: "self_report"`, `dimension: "environment_setup"` and ids `intake-1`, `intake-2`, …. Write one element each for the corrected self-report (facet `self_report`), the surfaces they named (`surfaces_reported`), the usage left (`usage_left`) and what they keep away from AI (`keeps_away_from_ai`). The `statement` is a paraphrase. For any of these they didn't answer, still write the element, with value `"skipped"`. Use `support: {"window": "intake"}` and `confidence: {"evidence": "medium"}`.
 - Write `RUN/.local/run-notes.json`. Fields: `path` = `local`; `primary_surface`; `other_surfaces_reported`; `coordinator_model` (your model name); `usage_left_at_start`; `run_size` (`full` or `light`); and `started` (the current time).
 
 Then tell them: "Thanks, that's all I need. The rest runs by itself. I'll let you know when the results are ready. You don't need to watch."
@@ -87,6 +88,7 @@ Then start the subagents **in one message**, so that they run in parallel:
 
 - **Session mappers.** Start ceil(queued / 30) `session-mapper` agents, at least 2 and at most 6, using model `haiku`. Each gets the prompt `RUN=<RUN> SCRIPTS=<SCRIPTS> AGENT=m<N> PY=<PY>`, plus the line "Use PY instead of python3 in commands." if PY is not `python3`.
 - **One second coder.** A `session-mapper` with model `sonnet`, prompt `RUN=… SCRIPTS=… AGENT=v1 PASS=verify PY=…`.
+- If the corrected self-report describes investment work (deals, portfolio companies, a fund), add ` CORE=investment` to every mapper prompt, the second coder's included.
 - **Three analysers that don't need the map:** `analyser` agents for `environment`, `skills` and `automation`. Each gets the prompt `AREA=<area> RUN=<RUN> SCRIPTS=<SCRIPTS> SKILL=<SKILL> PY=<PY>`.
 
 Never read transcripts or subagent output files yourself; wait for the agents' replies. If a mapper fails, check `map_loop.py status`. If sessions remain, start a mapper **with the same name as the one that failed** (for example `m3`). Its unfinished claim goes back to that name, so a mapper with a new name can't pick it up.
@@ -122,13 +124,13 @@ Leave `self_assessment.raw.md` where it is. It's inside `.local`, so it's never 
 
 **5b. Validate elements.** Run `PY -I "SCRIPTS/discover.py" elements --run "RUN"`. If any file has errors, fix the lines yourself (the errors say exactly what's wrong) and run the check again until it reports `clean: true`.
 
-**5c. Report.** Read the section files in `RUN/.local/sections/*.md` and the element files. Don't read `collectors/` in full; the analysers have already summarised them. Write `RUN/report.md` following `SKILL/report-template.md`. It contains observations only, and leaves out any element marked `"sensitive": true`.
+**5c. Report.** Read the section files in `RUN/.local/sections/*.md` and the element files. Don't read `collectors/` in full; the analysers have already summarised them. Write `RUN/send/report.md` following `SKILL/report-template.md`. It contains observations only, and leaves out any element marked `"sensitive": true`.
 
 **5d. Privacy pass.**
 1. Run `PY -I "SCRIPTS/discover.py" assemble --run "RUN"`.
 2. Run `PY -I "SCRIPTS/sanitize.py" --run "RUN"`. Keep its counts.
-3. Read `report.md` and `sections.md`, and skim `elements.jsonl`, looking for **any remaining name of a person, client or company other than the participant**, and for anything that identifies them: email addresses, phone numbers, account IDs. Software products and AI tools are fine. Add each name you find with `aliases --add "Name=<role>"`, then run `sanitize.py` again.
-4. Write the counts into `run-notes.json` as `privacy_pass`. Use counts only, never the names: `{"replacements_by_label": {...}, "secrets_masked": N, "model_pass_names_added": N}`. Add `participant_active_minutes` (your estimate, usually 5–10) and `wall_minutes`.
+3. Read `send/report.md` and `send/sections.md`, and skim `send/elements.jsonl`, looking for **any remaining name of a person, client or company other than the participant**, and for anything that identifies them: email addresses, phone numbers, account IDs. Software products and AI tools are fine. Add each name you find with `aliases --add "Name=<role>"`, then run `sanitize.py` again.
+4. Write the counts into `run-notes.json` as `privacy_pass`. Use counts only, never the names: `{"replacements_by_label": {...}, "secrets_masked": N, "model_pass_names_added": N}`. Add `participant_active_minutes` (your estimate, usually 5–10). Wall time is measured by `assemble`; don't estimate it.
 5. Run `assemble` once more, so that the manifest picks up the notes, then `sanitize.py` again.
 
 **5e. The gate.** Run `PY -I "SCRIPTS/check_bundle.py" "RUN"`. Fix every problem it lists, then run it again. Never hand off a bundle that doesn't pass. It enforces plain text only and no hidden names. It also rejects recommendation language, so if it flags any, rewrite those sentences as observations.
@@ -136,13 +138,13 @@ Leave `self_assessment.raw.md` where it is. It's inside `.local`, so it's never 
 ## 6. Hand-off
 
 Send one short message:
-- "Your results are ready in `RUN`. Everything in the folder is plain text, and nothing in it runs."
+- "Your results are ready in `RUN/send`. Everything in that folder is plain text, and nothing in it runs."
 - Three to five sentences describing what's in the report, neutrally. No verdict.
-- "Would you like to look through it first? You can open `report.md` in any text editor, or I can show it here. If you'd like anything removed, just tell me."
-- "When you're happy, attach the seven files (`README.txt`, `report.md`, `manifest.json`, `intake.json`, `elements.jsonl`, `sections.md`, `collectors.json`) to an email to hello@matthiasfrank-consulting.com. Separate files are fine; there's no need to zip them. The hidden `.local` folder stays with you."
-- "Shall I open the folder for you, so you can select all seven files and drag them into the email?"
+- "Would you like to look through it first? You can open `send/report.md` in any text editor, or I can show it here. If you'd like anything removed, just tell me."
+- "When you're happy, attach every file in the `send` folder to an email to hello@matthiasfrank-consulting.com. Separate files are fine, and so is zipping the `send` folder. Send nothing from outside it: the hidden `.local` folder next to it stays with you."
+- "Shall I open the `send` folder for you, so you can select all its files and drag them into the email?"
 
-If they say yes, run `open "RUN"` (macOS) or `explorer "RUN"` (Windows), exactly in that form. The plugin pre-approves it, so there's no permission prompt. If they ask for changes, edit the files, run `sanitize.py` and `check_bundle.py` again, and confirm.
+If they say yes, run `open "RUN/send"` (macOS) or `explorer "RUN/send"` (Windows), exactly in that form, with `RUN` written out as the full path. The plugin pre-approves it, so there's no permission prompt. If they ask for changes, edit the files, run `sanitize.py` and `check_bundle.py` again, and confirm.
 
 ## Fallback: no Python
 

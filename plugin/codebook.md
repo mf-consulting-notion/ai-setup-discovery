@@ -1,31 +1,44 @@
-# Codebook 0.3.0
+# Codebook 0.4.0
 
 These are the definitions behind `schemas/session-record.json` (one record per session) and `schemas/evidence-element.json` (one observation). The schemas hold the closed list of allowed values; this file says what each value means. When a value is borderline, pick the closest one and say so in `gist`.
 
 ## Session record fields
 
-- **work_kind**: who the work is for. Decide by **who receives the end result**. If a client receives it, it's `client_work`, even when it's built with the participant's own tools. If the participant's own audience or prospects receive it, it's `content_marketing`. If the result is a tool or product the participant uses or sells, it's `internal_product`. Use `ai_setup_meta` only when the AI setup itself is the subject (skills, instructions, memory, agents).
-  - `client_work` is anything delivered to or for a customer or employer's client.
-  - `internal_product` is the participant's own product, tooling or business venture.
-  - `content_marketing` covers posts, newsletters and site copy.
-  - `business_admin` covers finance, contracts, scheduling and inbox.
+- **work_kind**: who the work is for. Decide by **who receives the end result**, in the participant's own terms: the values are the same for an investor, a consultant or an engineer.
+  - `core_work` is the participant's main professional work, whoever receives it: deals and portfolio for an investor, client delivery for a consultant, the product for an engineer.
+  - `own_tooling` is tools, skills, templates or pipelines the participant builds for themselves or their team.
+  - `business_admin` covers inbox, scheduling, finance, contracts and internal coordination.
+  - `content_marketing` covers posts, newsletters and site copy for the participant's own audience or prospects.
+  - `ai_setup_meta` is configuring the AI itself (skills, instructions, memory, agents) when that is the subject of the session.
   - `personal` is outside work.
-  - `ai_setup_meta` is configuring the AI itself.
+  - `unclear` when the skeleton gives no hint.
+- **core_work_area** (optional): code it only when `work_kind` is `core_work` and the self-report describes investment work. Otherwise leave the field out.
+  - `deal_sourcing` finds and screens new opportunities.
+  - `deal_execution` works on a live deal: diligence, models, terms, closing.
+  - `portfolio` supports or monitors companies already held.
+  - `other_core` is other investment work, such as fundraising or reporting to investors.
 - **work_category**: the kind of activity, regardless of who it's for.
 - **workflow**: the recurring shape of the **work done** in the session. How it began is `start_trigger`, so a session that starts from a handoff note and then plans and builds is `plan_then_build` with `start_trigger: handoff_doc`.
-  - `plan_then_build` writes a plan, then executes it.
-  - `grill_decisions` is the AI questioning the participant to reach decisions.
-  - `triage_and_dispatch` sorts incoming items and routes them.
+  - `plan_then_build` writes or agrees a plan, then executes it. This includes the AI questioning the participant to reach decisions before building.
+  - `content_production` drafts posts, newsletters, scripts or site copy.
+  - `research_writeup` gathers sources and writes up what was found.
+  - `debug_fix` finds and fixes something broken.
+  - `config_maintenance` changes settings, infrastructure, skills or the AI setup itself.
+  - `triage_and_dispatch` sorts incoming items and routes them, including closing out admin queues.
+  - `correspondence` drafts or answers emails, replies and messages.
+  - `modelling_analysis` builds or updates spreadsheets, models, comps or other analysis.
+  - `deck_document` produces decks and documents for others to read.
   - `quick_question` is one or two turns with no artefact.
   - `document_review` means reading or commenting on a supplied document.
   - `data_extraction` pulls structured data out of material.
+  - `other` only when none of these fits; say what it was in `gist`.
 - **pipeline_stage**: where in the participant's own flow this session sits.
 - **start_trigger**:
   - `fresh_prompt` is typed from scratch.
   - `handoff_doc` starts by pointing at a note.
   - `slash_skill` starts with a `/command`.
   - `resumed` continues an earlier session.
-  - `automated` means a schedule or script started it.
+  - `automated` means a schedule or script started it. When the skeleton header says `origin scheduled` or `origin scripted`, this is the only allowed value.
   - `pasted_material` starts by pasting a document, email or data.
 - **skills_invoked**: the `/commands` the participant typed and skills the AI loaded, by name.
 - **interaction_mode**:

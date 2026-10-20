@@ -50,10 +50,10 @@ Leave out any element marked `"sensitive": true`, and any instance that would em
 <3–5 bullets paraphrasing the model self-assessment, each starting "The AI says…" or similar so it's clearly attributed.>
 
 ## Three views side by side
-<places where your self-description, the session traces and the AI's view describe something differently, each stated plainly with its source, e.g. "Your description: X. Sessions: Y (n of N). The AI's view: Z." No verdict on which is right.>
+<places where your self-description, the session traces and the AI's view describe something differently, each stated plainly with its source, e.g. "Your description: X. Sessions: Y (n of N). The AI's view: Z." No verdict on which is right. For each one, give the elements it compares `disagrees_with` links to each other's ids (the intake element, the session element, the self-assessment element), so the disagreement is in the data as well as the prose.>
 
 ## About this run
-<window, sources read and not read, sampling, the second-coder agreement as a plain sentence ("an independent second reading agreed on about 3 in 4 labels"), and what was hidden for privacy (counts only). Workflow and work-kind counts rest on labels; give the second-reading agreement for them so the reader can weigh them.>
+<window, and how far back the transcripts actually go when that's shorter (`window_coverage_days` in the manifest), sources read and not read, sampling and how the sampled sessions split by origin (`session_map.by_origin`: started by the participant, by a schedule or by a script; give the actual split; automated sessions take at most a quarter of the map's cap, so when there is little interactive work they can still be most of a small sample), the second-coder agreement as a plain sentence ("an independent second reading agreed on about 3 in 4 labels"), and what was hidden for privacy (counts only). Workflow and work-kind counts rest on labels; give the second-reading agreement for them so the reader can weigh them.>
 ```
 
 Write it as you'd brief a respected colleague about their own work: plainly, specifically and without flattery.

@@ -34,8 +34,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import evidence  # noqa: E402
 
-SKILL_VERSION = "1.0.0"
+def _plugin_version() -> str | None:
+    try:
+        return json.loads((Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+SKILL_VERSION = _plugin_version()   # plugin.json is the one place the version lives
+MIN_CLAUDE = (2, 1, 275)   # older CLIs fail the headless self-assessment (pilot, 2.1.55)
+CODEBOOK_VERSION = "0.4.0"
 AREAS = ("environment", "session_behaviour", "context_memory", "skills", "connectors", "automation", "self_assessment")
+AREAS_ELEMENTS = AREAS + ("intake",)   # intake has elements but no section
 C = collections.Counter
 
 
@@ -45,6 +55,7 @@ class Run:
     def __init__(self, root: Path):
         self.root = Path(root)
         self.local = self.root / ".local"
+        self.send = self.root / "send"   # the run bundle: the only thing the participant sends
         cfg = json.loads((self.local / "run.json").read_text(encoding="utf-8"))
         self.home = Path(cfg["home"])
         self.window = int(cfg["window_days"])
@@ -61,7 +72,7 @@ class Run:
                 keep = set(json.loads(idx.read_text(encoding="utf-8")))
                 found = [s for s in found if str(s.path) in keep]
             self._sessions = found
-        return [s for s in self._sessions if s.prompts >= min_prompts]
+        return [s for s in self._sessions if s.total_prompts >= min_prompts]
 
     def freeze(self, exclude_newer_than_minutes: int = 0) -> int:
         ss = [s for s in self.sessions(0)
@@ -125,7 +136,7 @@ def cmd_probe(run: Run) -> dict:
     if not (run.local / "session-index.json").exists():
         run.freeze(exclude_newer_than_minutes=10)
     ss = run.sessions(0)
-    by = C(s.surface for s in ss if s.prompts)
+    by = C(s.surface for s in ss if s.total_prompts)
     data = {
         "os": platform.system(), "os_release": platform.release(), "python": platform.python_version(),
         "claude_cli": _which_version("claude"), "codex_cli": _which_version("codex"),
@@ -137,9 +148,13 @@ def cmd_probe(run: Run) -> dict:
             "prompt_history": (run.home / ".claude" / "history.jsonl").exists(),
         },
         "sessions_in_window": dict(by), "sessions_in_window_total": sum(by.values()),
-        "oldest_in_window": min((s.started for s in ss if s.prompts and s.started), default=None),
-        "projects_in_window": len({s.project_key for s in ss if s.prompts}),
+        "oldest_in_window": min((s.started for s in ss if s.total_prompts and s.started), default=None),
+        "projects_in_window": len({s.project_key for s in ss if s.total_prompts}),
     }
+    oldest = evidence.oldest_record(f for fs in files.values() for f in fs)
+    span = round((run.now - oldest).total_seconds() / 86400, 1) if oldest else 0
+    data["transcript_span_days"] = span
+    data["window_coverage_days"] = min(run.window, span)
     data["suggested_path"] = "local" if data["sessions_in_window_total"] >= 5 else "chat"
     return run.write_collector("probe", data)
 
@@ -167,7 +182,7 @@ def cmd_aliases(run: Run, a) -> dict:
 def _hidden_folders(t: evidence.AliasTable) -> list:
     bases = {k.replace("\\", "/").rstrip("/").split("/")[-1] for k in t.projects}
     # only names that are actually masked (ordinary words like "projects" or "tmp" never are)
-    return sorted(b for b in bases if evidence._variants(b) and b.lower() not in {k.lower() for k in t.keep})
+    return sorted(b for b in bases if evidence.folder_variants(b) and b.lower() not in {k.lower() for k in t.keep})
 
 
 # ---------------------------------------------------------------- collectors
@@ -378,7 +393,7 @@ def col_activity(run: Run) -> dict:
              "date": s.started.date().isoformat() if s.started else None, "hour": s.started.astimezone().hour if s.started else None,
              "weekday": s.started.astimezone().strftime("%a") if s.started else None,
              "active_min": round(s.active_ms / 60000, 1), "active_source": s.active_source, "wall_min": s.wall_min,
-             "prompts": s.prompts, "slash_commands": s.slash_commands, "model": s.model} for s in ss]
+             "prompts": s.prompts, "slash_commands": s.slash_commands, "model": s.model, "origin": s.origin} for s in ss]
     by_surface = {}
     for surf in sorted({r["surface"] for r in rows}):
         x = [r for r in rows if r["surface"] == surf]
@@ -396,9 +411,11 @@ def col_activity(run: Run) -> dict:
     weeks = C(s.ended.astimezone().strftime("%G-W%V") for s in ss if s.ended)
     return {"present": True, "window_days": run.window, "sessions": len(rows), "by_surface": by_surface,
             "active_hours_total": round(sum(r["active_min"] for r in rows) / 60, 1),
+            "by_origin": {o: {"sessions": len(x), "active_hours": round(sum(r["active_min"] for r in x) / 60, 1)}
+                          for o in evidence.ORIGINS for x in [[r for r in rows if r["origin"] == o]] if x},
             "active_hours_by_project": {k: round(v, 1) for k, v in proj.most_common(25)},
             "projects": len(proj), "sessions_per_week_by_last_activity": dict(sorted(weeks.items())),
-            "sessions_started_before_window": sum(1 for s in ss if s.started and s.started < run.now - dt.timedelta(days=run.window)),
+            "sessions_started_before_window": sum(1 for s in ss if s.records_before_window),
             "hour_of_day": dict(sorted(C(r["hour"] for r in rows).items())), "weekday": dict(C(r["weekday"] for r in rows)),
             "concurrency": {"peak_parallel_sessions_5min": peak, "hours_with_2plus_sessions": round(multi, 1),
                             "hours_with_any_session": round(len(slots) * 5 / 60, 1)},
@@ -537,13 +554,14 @@ def cmd_collect(run: Run, a) -> dict:
 
 # ---------------------------------------------------------------- assemble
 
-README = """AI Work Discovery — results folder
-==================================
+README = """AI Work Discovery — results to send
+===================================
 
-This folder holds the results of your discovery run. Every file is plain text
-(Markdown or JSON). Nothing in it is executable, and nothing is zipped.
+This "send" folder holds the results of your discovery run. Every file is plain
+text (Markdown or JSON). Nothing in it is executable.
 
-To send it: attach the files below to an email to hello@matthiasfrank-consulting.com.
+To send it: attach every file in this folder to an email to
+hello@matthiasfrank-consulting.com. Zipping this folder first is fine too.
 
   report.md         what you saw at the end of the run
   manifest.json     what was read, over which period, and what was left out
@@ -551,9 +569,11 @@ To send it: attach the files below to an email to hello@matthiasfrank-consulting
   elements.jsonl    the individual observations behind the report
   sections.md       the narrative for each area
   collectors.json   counts and structure from your setup (no conversation text)
+  aggregate.json    the codes and counts from the session map (no conversation text)
 
-The hidden .local folder stays on your machine. It holds the list of names that
-were hidden and some working files. You can delete it after sending.
+The hidden .local folder next to this one stays on your machine. It holds the
+list of names that were hidden and some working files. Don't send it; you can
+delete it after sending.
 """
 
 
@@ -567,15 +587,21 @@ def cmd_self_assess(run: Run, a) -> dict:
     out = run.local / "sections" / "self_assessment.raw.md"
     if not exe:
         return {"ran": False, "reason": "claude CLI not on PATH"}
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", _which_version("claude") or "")
+    if m and tuple(map(int, m.groups())) < MIN_CLAUDE:
+        return {"ran": False, "reason": f"claude CLI {m.group(0)} is older than {'.'.join(map(str, MIN_CLAUDE))}"}
     prompt = (Path(__file__).resolve().parent.parent / "skills" / "discovery-run" / "self-assessment.md").read_text(encoding="utf-8")
     env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_CODE_") and k != "CLAUDECODE"}
     try:
-        r = subprocess.run([exe, "-p", "--model", a.get("--model") or "opus", prompt], cwd=str(run.home), env=env,
+        # the prompt goes on stdin: a long argument is fragile on Windows and visible in process lists
+        r = subprocess.run([exe, "-p", "--model", a.get("--model") or "opus"], input=prompt, cwd=str(run.home), env=env,
                            capture_output=True, text=True, timeout=900)
     except subprocess.TimeoutExpired:
         return {"ran": False, "reason": "timed out after 15 minutes"}
     if r.returncode or not r.stdout.strip():
-        return {"ran": False, "reason": f"exit {r.returncode}"}
+        first = next((x.strip() for x in (r.stderr or "").splitlines() if x.strip()), "")
+        first = run.aliases().mask(evidence.mask_secrets(first))[:200]
+        return {"ran": False, "reason": f"exit {r.returncode}" + (f": {first}" if first else "")}
     out.write_text(run.aliases().mask(evidence.mask_secrets(r.stdout)), encoding="utf-8")
     return {"ran": True, "file": str(out), "chars": len(r.stdout)}
 
@@ -609,6 +635,9 @@ def cmd_elements(run: Run) -> dict:
     out, ids = {}, C()
     for p in sorted((run.local / "elements").glob("*.jsonl")):
         errs, n = [], 0
+        if p.stem not in AREAS_ELEMENTS:
+            out[p.stem] = {"elements": 0, "errors": [f"{p.name}: not an element area, so it would never ship ({', '.join(AREAS_ELEMENTS)})"]}
+            continue
         for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
             if not line.strip():
                 continue
@@ -644,40 +673,63 @@ def _manifest(run: Run, cols: dict, n_elements: int) -> dict:
     for name, data in cols.items():
         if isinstance(data, dict):
             sources[name] = {"present": data.get("present", True), **({"reason": data["reason"]} if data.get("reason") else {})}
+    if not probe:   # chat path: no collector saw the machine, so the chat skill's run-notes say what was read
+        probe = {"os": notes.get("os"), "sessions_in_window": notes.get("sessions_in_window")}
+        sources = notes.get("sources") or sources
+    now = dt.datetime.now(dt.timezone.utc)
+    created = evidence._ts(cfg.get("created"))
     return {
-        "run_id": run.id, "skill_version": cfg.get("skill_version"), "codebook_version": "0.3.0",
-        "created": cfg.get("created"), "assembled": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "run_id": run.id, "skill_version": cfg.get("skill_version"), "codebook_version": CODEBOOK_VERSION,
+        "created": cfg.get("created"), "assembled": now.isoformat(),
         "path": notes.get("path", "local"), "chat_route": notes.get("chat_route"), "capabilities": notes.get("capabilities"),
         "primary_surface": notes.get("primary_surface"),
         "other_surfaces_reported": notes.get("other_surfaces_reported"), "coordinator_model": notes.get("coordinator_model"),
         "usage_left_at_start": notes.get("usage_left_at_start"), "run_size": notes.get("run_size", "full"),
         "os": probe.get("os"), "window_days": run.window, "oldest_session_in_window": probe.get("oldest_in_window"),
+        "transcript_span_days": probe.get("transcript_span_days"), "window_coverage_days": probe.get("window_coverage_days"),
         "sessions_in_window": probe.get("sessions_in_window"),
         "session_map": {"eligible": plan.get("eligible"), "mapped": agg.get("sessions_mapped"), "queued": len(q),
-                        "by_surface": dict(C(x["surface"] for x in q)), "agreement": agg.get("agreement")},
+                        "by_surface": dict(C(x["surface"] for x in q)), "by_origin": plan.get("by_origin"),
+                        "agreement": agg.get("agreement")},
         "sources": sources, "elements": n_elements,
         "self_assessment": notes.get("self_assessment"), "privacy_pass": privacy,
         "exclusions": notes.get("exclusions", []), "participant_active_minutes_estimate": notes.get("participant_active_minutes"),
-        "wall_minutes": notes.get("wall_minutes"), "problems_during_run": notes.get("problems", []),
+        # measured, from run creation to this assembly (a model's own guess at it was off in the pilot)
+        "wall_minutes": round((now - created).total_seconds() / 60) if created else None,
+        "problems_during_run": notes.get("problems", []),
     }
 
 
+def _put(p: Path, text: str) -> None:
+    """Write a bundle file, never through a link that was left in its place."""
+    if p.is_symlink():
+        p.unlink()
+    p.write_text(text, encoding="utf-8")
+
+
 def cmd_assemble(run: Run) -> dict:
-    r = run.root
+    r = run.send
+    if r.is_symlink() or (r.exists() and not r.is_dir()):
+        raise SystemExit(f"{r} is not a plain folder (a link or a file); nothing written")
+    r.mkdir(exist_ok=True)
     cols = {p.stem: _load(p) for p in sorted((run.local / "collectors").glob("*.json"))}
-    (r / "collectors.json").write_text(json.dumps(cols, indent=1, ensure_ascii=False), encoding="utf-8")
+    if cols:   # the chat path without scripts on the machine has none
+        _put(r / "collectors.json", json.dumps(cols, indent=1, ensure_ascii=False))
+    agg = run.local / "map" / "aggregate.json"
+    if agg.is_file():   # codes and counts only; the records with their gists stay in .local
+        _put(r / "aggregate.json", run.aliases().mask_json_text(agg.read_text(encoding="utf-8")))
     # approved section files only, in reading order; working files such as *.raw.md never ship
     secs = [run.local / "sections" / f"{a}.md" for a in AREAS if (run.local / "sections" / f"{a}.md").exists()]
-    (r / "sections.md").write_text("\n\n".join(p.read_text(encoding="utf-8").strip() for p in secs) + "\n", encoding="utf-8")
+    _put(r / "sections.md", "\n\n".join(p.read_text(encoding="utf-8").strip() for p in secs) + "\n")
     elements = []
-    for a in AREAS:
+    for a in AREAS_ELEMENTS:
         p = run.local / "elements" / f"{a}.jsonl"
         if p.exists():
             elements += list(evidence._records(p))
-    (r / "elements.jsonl").write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in elements), encoding="utf-8")
-    (r / "README.txt").write_text(README, encoding="utf-8")
+    _put(r / "elements.jsonl", "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in elements))
+    _put(r / "README.txt", README)
     manifest = run.aliases().mask(json.dumps(_manifest(run, cols, len(elements)), indent=1, ensure_ascii=False, default=str))
-    (r / "manifest.json").write_text(manifest, encoding="utf-8")
+    _put(r / "manifest.json", manifest)
     return {"collectors": len(cols), "sections": len(secs), "elements": len(elements), "folder": str(r)}
 
 

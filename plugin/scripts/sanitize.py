@@ -4,7 +4,7 @@ and every name in the run's alias table. The model-based privacy check runs afte
 
     python3 -I sanitize.py --run DIR
 
-Covers the bundle's text files and .local/sections and .local/elements. Prints replacement
+Covers the bundle's text files (send/, plus any stray ones at the run root) and .local/sections and .local/elements. Prints replacement
 counts by label, never the names themselves.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ TEXT = (".md", ".json", ".jsonl", ".txt")
 
 
 def targets(run: Path) -> list[Path]:
-    files = [p for p in run.iterdir() if p.is_file() and p.suffix in TEXT]
+    files = [p for d in (run, run / "send") if d.is_dir() for p in d.iterdir() if p.is_file() and p.suffix in TEXT]
     # model-written files only; .local/map holds working state (queue paths must stay real) and
     # records are already masked at submit
     for sub in ("sections", "elements"):

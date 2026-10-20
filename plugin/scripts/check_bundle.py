@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """The gate before hand-off: is this folder safe to send, and does it hold only plain text?
 
-    python3 -I check_bundle.py DIR                         check a run bundle (uses DIR/.local/aliases.json)
+    python3 -I check_bundle.py DIR                         check a run bundle: DIR is the run folder or its send/
     python3 -I check_bundle.py --package DIR --terms FILE  scan our own package for names listed in FILE
 
-Bundle rules: flat folder; only .md .json .jsonl .txt; valid UTF-8, no NUL bytes; no <script,
+Bundle rules: the run folder holds only send/ and .local/; send/ is a flat folder; only .md .json .jsonl .txt; valid UTF-8, no NUL bytes; no <script,
 <html, <iframe, javascript: or shebang; no base64 run over 1 KB; total under 10 MB; no secret
 pattern; no term from the alias table; JSON/JSONL must parse; elements must match the schema;
 report.md must not contain recommendation language.
@@ -31,18 +31,32 @@ ADVICE = re.compile(r"\b(we recommend|i recommend|recommendations?|you should|yo
 
 
 # Details the participant may not want to forward; they belong in sensitive elements, not report prose.
-SENSITIVE = re.compile(r"\b(weekends?|late[- ]night|at night|evenings?|after (?:8|9|10|20|21|22)(?::00)?\s*(?:pm)?|1password|keychain|bitwarden|lastpass"
+SENSITIVE = re.compile(r"\b(weekends?|saturdays?|sundays?|late[- ]night|at night|evenings?|after (?:8|9|10|20|21|22)(?::00)?\s*(?:pm)?|1password|keychain|bitwarden|lastpass"
                        r"|password manager|permission mode|bypass permissions|dangerously)\b", re.I)
 
 
-def check_bundle(root: Path) -> list[str]:
+def check_bundle(path: Path) -> list[str]:
+    """path: the run folder or its send/ folder; the bundle checked is always send/."""
+    path = Path(path)
+    # the run is identified by its marker, and a send/ folder's parent run wins, so neither a nested
+    # send/ nor a marker planted inside send/ can redirect the check
+    if path.name == "send" and (path.parent / ".local" / "run.json").is_file():
+        run = path.parent
+    elif (path / ".local" / "run.json").is_file():
+        run = path
+    else:
+        return ["not a run folder (no .local/run.json here or above send/)"]
+    root = run / "send"
     problems: list[str] = []
-    aliases = evidence.AliasTable.load(root / ".local" / "aliases.json") if (root / ".local" / "aliases.json").exists() else None
+    if root.is_symlink() or not root.is_dir():
+        return ["send: missing or a link (run assemble first)"]
+    for p in sorted(run.iterdir()):
+        if p.name not in ("send", ".local"):
+            problems.append(f"{p.name}: outside the send folder (move it into send/ or delete it)")
+    aliases = evidence.AliasTable.load(run / ".local" / "aliases.json") if (run / ".local" / "aliases.json").exists() else None
     total = 0
     schema = validate.load_schema("evidence-element")
     for p in sorted(root.iterdir()):
-        if p.name == ".local":
-            continue
         if p.is_dir():
             problems.append(f"{p.name}: sub-folder not allowed (bundle must be flat)")
             continue

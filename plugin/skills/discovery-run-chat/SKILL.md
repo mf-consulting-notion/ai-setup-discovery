@@ -70,8 +70,9 @@ Context gets cleared during long work. **Save every record to a file as soon as 
 **B. Past-chats tool.**
 1. List conversations from the last 30 days, newest first, paging back until you reach the window's start. Skip this conversation. Keep only ids, titles and dates.
 2. Take up to 40 of them, or 15 for a light run. If there are more, spread the picks evenly across the window instead of taking the newest.
-3. For each one, read it in full and write one session record that follows `codebook.md` and `schemas/session-record.json`, with `surface: "chat"` and `session` set to the first 8 characters of the conversation's id (or `c01`, `c02` and so on). Records hold codes, never content.
+3. For each one, read it and write one session record that follows `codebook.md` and `schemas/session-record.json`, with `surface: "chat"` and `session` set to the first 8 characters of the conversation's id (or `c01`, `c02` and so on). Records hold codes, never content. Long chats are read up to about 100 turns (two pages of `read_conversation`). Say so in `exclusions` as "long chats read up to about 100 turns" and in the report's "About this run".
 4. **With a delegation tool:** split the picks across 3–4 subagents (2 for a light run), about 10 each. Give each one its conversation ids, `codebook.md` and the record schema verbatim, and ask it to return only records. If a subagent can't read past chats, read and code the rest yourself.
+   - **Second coding:** one more subagent re-codes 5–8 of the picked chats from scratch, without seeing the first records. Spread them across the first coders' shares. It still counts toward the cap of 5 subagents, so use 3 first coders when you need a second coder. Save its records to `/tmp/run/.local/map/records-verify.jsonl` (with the scripts) or as a second tally (without them). `aggregate` computes agreement from both files. Without a delegation tool, skip the second coding and say so in `problems`.
 5. **With code execution and the scripts:** append each record as one line to `/tmp/run/.local/map/records.jsonl`, after `python3 -I PLUGIN/scripts/discover.py init --out /tmp/run --home /tmp/emptyhome`. Then run `python3 -I PLUGIN/scripts/map_loop.py aggregate --run /tmp/run`. **Without it:** keep a compact tally file as you go: counts per field value, plus friction, corrections and restatements by key.
 
 **A. Code execution with the scripts, plus an uploaded export.** Work as in the local version. Use `--home` pointing at an empty folder, and import the export:
@@ -107,10 +108,16 @@ Write the elements for each area (4–12 per area, matching `schemas/evidence-el
 
 ## 6. Output and hand-off
 
-The files are the same as in the local version: `README.txt`, `report.md`, `manifest.json`, `intake.json`, `elements.jsonl` and `sections.md`. `collectors.json` comes along whenever the scripts ran. The manifest records `path: "chat"`, `chat_route` (`A`, `B` or `C`), `capabilities` and `exclusions`. With the scripts, write these into `/tmp/run/.local/run-notes.json` (with the other fields the local version puts there) and `assemble` builds the manifest; without them, write `manifest.json` yourself with the same fields.
+The files are the same as in the local version: `README.txt`, `report.md`, `manifest.json`, `intake.json`, `elements.jsonl` and `sections.md`. `collectors.json` comes along whenever the scripts ran. The manifest records `path: "chat"`, `chat_route` (`A`, `B` or `C`), `capabilities` and `exclusions`. Because no script looks at a machine here, it also records:
+- `os` as reported, or `null`;
+- `sessions_in_window`: `{"chat": N}`, the number of chats in the window from your listing;
+- `sources`: what was read, as `{"past_chats": {"present": true}, "memory": {"present": false, "reason": "memory off"}, …}`;
+- `privacy_pass`: counts only, `{"names_replaced": N, "secrets_masked": N}` (never the names).
+
+With the scripts, write all of these into `/tmp/run/.local/run-notes.json` (with the other fields the local version puts there) and `assemble` builds the manifest from them. Without the scripts, write `manifest.json` yourself with the same fields.
 
 **Never zip the files.** Everything that comes back stays plain text.
-- **With code execution and the scripts:** write sections and elements into `/tmp/run/.local/` and `report.md` into `/tmp/run`, then follow steps 5b–5e of `../discovery-run/SKILL.md` (`elements`, `assemble`, `sanitize.py`, `check_bundle.py`) with `RUN=/tmp/run` and `SCRIPTS=PLUGIN/scripts`. Fix every problem the check reports, then send each file in `/tmp/run` for download, one by one.
+- **With code execution and the scripts:** write sections and elements into `/tmp/run/.local/` and `report.md` and `intake.json` into `/tmp/run/send/`, then follow steps 5b–5e of `../discovery-run/SKILL.md` (`elements`, `assemble`, `sanitize.py`, `check_bundle.py`) with `RUN=/tmp/run` and `SCRIPTS=PLUGIN/scripts`. Fix every problem the check reports, then send each file in `/tmp/run/send` for download, one by one.
 - **With file sending only:** create the files directly and send each one.
 - **Neither:** put everything into one Markdown document with a heading per file. The participant can copy it into an email. Code blocks are fine for the JSON parts.
 

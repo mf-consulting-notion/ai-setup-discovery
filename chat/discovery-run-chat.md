@@ -70,8 +70,9 @@ Context gets cleared during long work. **Save every record to a file as soon as 
 **B. Past-chats tool.**
 1. List conversations from the last 30 days, newest first, paging back until you reach the window's start. Skip this conversation. Keep only ids, titles and dates.
 2. Take up to 40 of them, or 15 for a light run. If there are more, spread the picks evenly across the window instead of taking the newest.
-3. For each one, read it in full and write one session record that follows `codebook.md` and `schemas/session-record.json`, with `surface: "chat"` and `session` set to the first 8 characters of the conversation's id (or `c01`, `c02` and so on). Records hold codes, never content.
+3. For each one, read it and write one session record that follows `codebook.md` and `schemas/session-record.json`, with `surface: "chat"` and `session` set to the first 8 characters of the conversation's id (or `c01`, `c02` and so on). Records hold codes, never content. Long chats are read up to about 100 turns (two pages of `read_conversation`). Say so in `exclusions` as "long chats read up to about 100 turns" and in the report's "About this run".
 4. **With a delegation tool:** split the picks across 3–4 subagents (2 for a light run), about 10 each. Give each one its conversation ids, `codebook.md` and the record schema verbatim, and ask it to return only records. If a subagent can't read past chats, read and code the rest yourself.
+   - **Second coding:** one more subagent re-codes 5–8 of the picked chats from scratch, without seeing the first records. Spread them across the first coders' shares. It still counts toward the cap of 5 subagents, so use 3 first coders when you need a second coder. Save its records to `/tmp/run/.local/map/records-verify.jsonl` (with the scripts) or as a second tally (without them). `aggregate` computes agreement from both files. Without a delegation tool, skip the second coding and say so in `problems`.
 5. **With code execution and the scripts:** append each record as one line to `/tmp/run/.local/map/records.jsonl`, after `python3 -I PLUGIN/scripts/discover.py init --out /tmp/run --home /tmp/emptyhome`. Then run `python3 -I PLUGIN/scripts/map_loop.py aggregate --run /tmp/run`. **Without it:** keep a compact tally file as you go: counts per field value, plus friction, corrections and restatements by key.
 
 **A. Code execution with the scripts, plus an uploaded export.** Work as in the local version. Use `--home` pointing at an empty folder, and import the export:
@@ -107,10 +108,16 @@ Write the elements for each area (4–12 per area, matching `schemas/evidence-el
 
 ## 6. Output and hand-off
 
-The files are the same as in the local version: `README.txt`, `report.md`, `manifest.json`, `intake.json`, `elements.jsonl` and `sections.md`. `collectors.json` comes along whenever the scripts ran. The manifest records `path: "chat"`, `chat_route` (`A`, `B` or `C`), `capabilities` and `exclusions`. With the scripts, write these into `/tmp/run/.local/run-notes.json` (with the other fields the local version puts there) and `assemble` builds the manifest; without them, write `manifest.json` yourself with the same fields.
+The files are the same as in the local version: `README.txt`, `report.md`, `manifest.json`, `intake.json`, `elements.jsonl` and `sections.md`. `collectors.json` comes along whenever the scripts ran. The manifest records `path: "chat"`, `chat_route` (`A`, `B` or `C`), `capabilities` and `exclusions`. Because no script looks at a machine here, it also records:
+- `os` as reported, or `null`;
+- `sessions_in_window`: `{"chat": N}`, the number of chats in the window from your listing;
+- `sources`: what was read, as `{"past_chats": {"present": true}, "memory": {"present": false, "reason": "memory off"}, …}`;
+- `privacy_pass`: counts only, `{"names_replaced": N, "secrets_masked": N}` (never the names).
+
+With the scripts, write all of these into `/tmp/run/.local/run-notes.json` (with the other fields the local version puts there) and `assemble` builds the manifest from them. Without the scripts, write `manifest.json` yourself with the same fields.
 
 **Never zip the files.** Everything that comes back stays plain text.
-- **With code execution and the scripts:** write sections and elements into `/tmp/run/.local/` and `report.md` into `/tmp/run`, then follow steps 5b–5e of `../discovery-run/SKILL.md` (`elements`, `assemble`, `sanitize.py`, `check_bundle.py`) with `RUN=/tmp/run` and `SCRIPTS=PLUGIN/scripts`. Fix every problem the check reports, then send each file in `/tmp/run` for download, one by one.
+- **With code execution and the scripts:** write sections and elements into `/tmp/run/.local/` and `report.md` and `intake.json` into `/tmp/run/send/`, then follow steps 5b–5e of `../discovery-run/SKILL.md` (`elements`, `assemble`, `sanitize.py`, `check_bundle.py`) with `RUN=/tmp/run` and `SCRIPTS=PLUGIN/scripts`. Fix every problem the check reports, then send each file in `/tmp/run/send` for download, one by one.
 - **With file sending only:** create the files directly and send each one.
 - **Neither:** put everything into one Markdown document with a heading per file. The participant can copy it into an email. Code blocks are fine for the JSON parts.
 
@@ -176,7 +183,7 @@ Up to four concrete changes, most useful first.
 
 Each analyser covers one **area**. It writes two files:
 - `RUN/.local/sections/<area>.md`: a narrative of 150–400 words that starts with `## <Area title>`. After it come a line `Unanswered:` and up to 3 questions this area couldn't settle.
-- `RUN/.local/elements/<area>.jsonl`: 4–15 evidence elements, one JSON object per line, matching `schemas/evidence-element.json`. The definitions are in `codebook.md`. Give them ids of the form `<area>-<n>`. Use `codebook_version` `"0.3.0"`.
+- `RUN/.local/elements/<area>.jsonl`: 4–15 evidence elements, one JSON object per line, matching `schemas/evidence-element.json`. The definitions are in `codebook.md`. Give them ids of the form `<area>-<n>`. Use `codebook_version` `"0.4.0"`.
 
 These rules apply to every area:
 - **Observations only.** No advice, no "should" or "could", no grades. Say what is there, how much, how often and since when. An absence is an observation too: "no hooks configured", "memory untouched for 60 days".
@@ -334,10 +341,10 @@ Leave out any element marked `"sensitive": true`, and any instance that would em
 <3–5 bullets paraphrasing the model self-assessment, each starting "The AI says…" or similar so it's clearly attributed.>
 
 ## Three views side by side
-<places where your self-description, the session traces and the AI's view describe something differently, each stated plainly with its source, e.g. "Your description: X. Sessions: Y (n of N). The AI's view: Z." No verdict on which is right.>
+<places where your self-description, the session traces and the AI's view describe something differently, each stated plainly with its source, e.g. "Your description: X. Sessions: Y (n of N). The AI's view: Z." No verdict on which is right. For each one, give the elements it compares `disagrees_with` links to each other's ids (the intake element, the session element, the self-assessment element), so the disagreement is in the data as well as the prose.>
 
 ## About this run
-<window, sources read and not read, sampling, the second-coder agreement as a plain sentence ("an independent second reading agreed on about 3 in 4 labels"), and what was hidden for privacy (counts only). Workflow and work-kind counts rest on labels; give the second-reading agreement for them so the reader can weigh them.>
+<window, and how far back the transcripts actually go when that's shorter (`window_coverage_days` in the manifest), sources read and not read, sampling and how the sampled sessions split by origin (`session_map.by_origin`: started by the participant, by a schedule or by a script; give the actual split; automated sessions take at most a quarter of the map's cap, so when there is little interactive work they can still be most of a small sample), the second-coder agreement as a plain sentence ("an independent second reading agreed on about 3 in 4 labels"), and what was hidden for privacy (counts only). Workflow and work-kind counts rest on labels; give the second-reading agreement for them so the reader can weigh them.>
 ```
 
 Write it as you'd brief a respected colleague about their own work: plainly, specifically and without flattery.
@@ -346,34 +353,47 @@ Write it as you'd brief a respected colleague about their own work: plainly, spe
 
 ## Appendix: codebook.md
 
-# Codebook 0.3.0
+# Codebook 0.4.0
 
 These are the definitions behind `schemas/session-record.json` (one record per session) and `schemas/evidence-element.json` (one observation). The schemas hold the closed list of allowed values; this file says what each value means. When a value is borderline, pick the closest one and say so in `gist`.
 
 ## Session record fields
 
-- **work_kind**: who the work is for. Decide by **who receives the end result**. If a client receives it, it's `client_work`, even when it's built with the participant's own tools. If the participant's own audience or prospects receive it, it's `content_marketing`. If the result is a tool or product the participant uses or sells, it's `internal_product`. Use `ai_setup_meta` only when the AI setup itself is the subject (skills, instructions, memory, agents).
-  - `client_work` is anything delivered to or for a customer or employer's client.
-  - `internal_product` is the participant's own product, tooling or business venture.
-  - `content_marketing` covers posts, newsletters and site copy.
-  - `business_admin` covers finance, contracts, scheduling and inbox.
+- **work_kind**: who the work is for. Decide by **who receives the end result**, in the participant's own terms: the values are the same for an investor, a consultant or an engineer.
+  - `core_work` is the participant's main professional work, whoever receives it: deals and portfolio for an investor, client delivery for a consultant, the product for an engineer.
+  - `own_tooling` is tools, skills, templates or pipelines the participant builds for themselves or their team.
+  - `business_admin` covers inbox, scheduling, finance, contracts and internal coordination.
+  - `content_marketing` covers posts, newsletters and site copy for the participant's own audience or prospects.
+  - `ai_setup_meta` is configuring the AI itself (skills, instructions, memory, agents) when that is the subject of the session.
   - `personal` is outside work.
-  - `ai_setup_meta` is configuring the AI itself.
+  - `unclear` when the skeleton gives no hint.
+- **core_work_area** (optional): code it only when `work_kind` is `core_work` and the self-report describes investment work. Otherwise leave the field out.
+  - `deal_sourcing` finds and screens new opportunities.
+  - `deal_execution` works on a live deal: diligence, models, terms, closing.
+  - `portfolio` supports or monitors companies already held.
+  - `other_core` is other investment work, such as fundraising or reporting to investors.
 - **work_category**: the kind of activity, regardless of who it's for.
 - **workflow**: the recurring shape of the **work done** in the session. How it began is `start_trigger`, so a session that starts from a handoff note and then plans and builds is `plan_then_build` with `start_trigger: handoff_doc`.
-  - `plan_then_build` writes a plan, then executes it.
-  - `grill_decisions` is the AI questioning the participant to reach decisions.
-  - `triage_and_dispatch` sorts incoming items and routes them.
+  - `plan_then_build` writes or agrees a plan, then executes it. This includes the AI questioning the participant to reach decisions before building.
+  - `content_production` drafts posts, newsletters, scripts or site copy.
+  - `research_writeup` gathers sources and writes up what was found.
+  - `debug_fix` finds and fixes something broken.
+  - `config_maintenance` changes settings, infrastructure, skills or the AI setup itself.
+  - `triage_and_dispatch` sorts incoming items and routes them, including closing out admin queues.
+  - `correspondence` drafts or answers emails, replies and messages.
+  - `modelling_analysis` builds or updates spreadsheets, models, comps or other analysis.
+  - `deck_document` produces decks and documents for others to read.
   - `quick_question` is one or two turns with no artefact.
   - `document_review` means reading or commenting on a supplied document.
   - `data_extraction` pulls structured data out of material.
+  - `other` only when none of these fits; say what it was in `gist`.
 - **pipeline_stage**: where in the participant's own flow this session sits.
 - **start_trigger**:
   - `fresh_prompt` is typed from scratch.
   - `handoff_doc` starts by pointing at a note.
   - `slash_skill` starts with a `/command`.
   - `resumed` continues an earlier session.
-  - `automated` means a schedule or script started it.
+  - `automated` means a schedule or script started it. When the skeleton header says `origin scheduled` or `origin scripted`, this is the only allowed value.
   - `pasted_material` starts by pasting a document, email or data.
 - **skills_invoked**: the `/commands` the participant typed and skills the AI loaded, by name.
 - **interaction_mode**:
@@ -458,7 +478,7 @@ These are the definitions behind `schemas/session-record.json` (one record per s
 
 ```json
 {
-  "$comment": "Session map record, codebook 0.3.0. One per session; paraphrase only, no verbatim text.",
+  "$comment": "Session map record, codebook 0.4.0. One per session; paraphrase only, no verbatim text.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -500,13 +520,21 @@ These are the definitions behind `schemas/session-record.json` (one record per s
     },
     "work_kind": {
       "enum": [
-        "client_work",
-        "internal_product",
-        "content_marketing",
+        "core_work",
+        "own_tooling",
         "business_admin",
-        "personal",
+        "content_marketing",
         "ai_setup_meta",
+        "personal",
         "unclear"
+      ]
+    },
+    "core_work_area": {
+      "enum": [
+        "deal_sourcing",
+        "deal_execution",
+        "portfolio",
+        "other_core"
       ]
     },
     "work_category": {
@@ -531,15 +559,14 @@ These are the definitions behind `schemas/session-record.json` (one record per s
     "workflow": {
       "enum": [
         "plan_then_build",
-        "grill_decisions",
         "content_production",
         "research_writeup",
         "debug_fix",
         "config_maintenance",
-        "ops_change",
-        "admin_close",
-        "client_deliverable",
         "triage_and_dispatch",
+        "correspondence",
+        "modelling_analysis",
+        "deck_document",
         "quick_question",
         "document_review",
         "data_extraction",
@@ -875,7 +902,7 @@ These are the definitions behind `schemas/session-record.json` (one record per s
     "excerpt": {"type": "string", "maxWords": 25},
     "sensitive": {"type": "boolean"},
     "disagrees_with": {"type": "array", "items": {"type": "string", "maxLength": 40}},
-    "codebook_version": {"enum": ["0.3.0"]}
+    "codebook_version": {"enum": ["0.4.0"]}
   }
 }
 ```

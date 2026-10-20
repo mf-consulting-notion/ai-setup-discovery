@@ -2,7 +2,7 @@
 
 Each analyser covers one **area**. It writes two files:
 - `RUN/.local/sections/<area>.md`: a narrative of 150–400 words that starts with `## <Area title>`. After it come a line `Unanswered:` and up to 3 questions this area couldn't settle.
-- `RUN/.local/elements/<area>.jsonl`: 4–15 evidence elements, one JSON object per line, matching `schemas/evidence-element.json`. The definitions are in `codebook.md`. Give them ids of the form `<area>-<n>`. Use `codebook_version` `"0.3.0"`.
+- `RUN/.local/elements/<area>.jsonl`: 4–15 evidence elements, one JSON object per line, matching `schemas/evidence-element.json`. The definitions are in `codebook.md`. Give them ids of the form `<area>-<n>`. Use `codebook_version` `"0.4.0"`.
 
 These rules apply to every area:
 - **Observations only.** No advice, no "should" or "could", no grades. Say what is there, how much, how often and since when. An absence is an observation too: "no hooks configured", "memory untouched for 60 days".

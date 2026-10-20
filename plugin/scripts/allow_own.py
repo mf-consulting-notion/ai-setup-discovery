@@ -3,7 +3,7 @@
 isn't asked hundreds of times (the briefing's acceptance is the approval).
 
 Allows exactly:
-  - Bash: `open` / `explorer` on a run folder itself, to show the participant their results
+  - Bash: `open` / `explorer` on a run folder itself or its `send` folder, to show the participant their results
   - Bash: `<python> -I <this plugin>/scripts/<discover|map_loop|sanitize|check_bundle>.py <args>` with no
     shell operators, plus map_loop's `submit ... <<'JSON'` quoted heredoc (its body is never expanded)
   - Read / Glob / Grep under ~/.claude, ~/.codex, the Cowork folder, this plugin, and run folders
@@ -87,8 +87,14 @@ def _args_ok(script: str, argv: list) -> bool:
     return True
 
 
+def _is_run_folder(p: Path) -> bool:
+    """A real run folder made by `discover.py init`: an exact generated name and its run.json, so an
+    app bundle or script named like a run folder is never launched."""
+    return p.parent == HOME and RUN_NAME.fullmatch(p.name) is not None and p.is_dir() and (p / ".local" / "run.json").is_file()
+
+
 def opens_run_folder(cmd: str) -> bool:
-    """`open <run folder>` (macOS) or `explorer <run folder>` (Windows): shows the results, nothing else."""
+    """`open <run folder>[/send]` (macOS) or `explorer …` (Windows): shows the results, nothing else."""
     if re.search(r"[$`;&|<>(){}*?!#\r\n]", cmd):
         return False
     try:
@@ -105,10 +111,8 @@ def opens_run_folder(cmd: str) -> bool:
         p = Path(arg).resolve()
     except (OSError, ValueError):
         return False
-    # the resolved target must be a real run folder made by `discover.py init`: an exact generated name
-    # and its run.json, so an app bundle or script named like a run folder is never launched
-    return bool(p) and p.parent == HOME and RUN_NAME.fullmatch(p.name) is not None \
-        and p.is_dir() and (p / ".local" / "run.json").is_file()
+    # judged on the resolved target, so a `send` link out of the run folder is judged where it points
+    return _is_run_folder(p) or (p.name == "send" and p.is_dir() and _is_run_folder(p.parent))
 
 
 def bash_ok(cmd: str) -> bool:

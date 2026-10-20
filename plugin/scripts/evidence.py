@@ -5,8 +5,10 @@ which stores Claude Code-format transcripts) and Codex (~/.codex/sessions). Stan
 only, read-only, never raises on malformed input.
 
 Interface:
-    sessions(home, window_days=30, now=None) -> list[Session]
-    skeleton(session, max_chars=60000, aliases=None) -> str        first line: "# session <id> ..."
+    sessions(home, window_days=30, now=None) -> list[Session]       times and counts clipped to the window
+    origin_of(first_user_record, saw_schedule_fire) / codex_origin(session_meta) -> interactive|scheduled|scripted|unknown
+    oldest_record(files) -> datetime | None                       for the transcript span
+    skeleton(session, max_chars=60000, aliases=None) -> str        first line: "# session <id> ..."; starts in the window
     tool_calls(session) -> Iterator[ToolCall]
     import_chat_export(export, out_dir) -> int                     claude.ai export -> per-chat transcripts
     AliasTable.build(home, extra_names=()) / .load(path) / .save(path) / .label(project_key) / .mask(text)
@@ -121,13 +123,16 @@ class Session:
     ended: _dt.datetime | None = None
     active_ms: int = 0
     active_source: str = "none"  # turn_duration | task_complete | gap_estimate | none
-    prompts: int = 0
+    prompts: int = 0             # in the window
+    total_prompts: int = 0       # over the session's whole life: decides whether it's in the index
+    records_before_window: int = 0
+    origin: str = "unknown"      # interactive | scheduled | scripted | unknown, from transcript metadata
     slash_commands: list = field(default_factory=list)
     model: str | None = None
     title: str | None = None
     skipped_lines: int = 0
     active_buckets: set = field(default_factory=set, repr=False)   # 5-minute slots with any activity
-
+    last_record: _dt.datetime | None = field(default=None, repr=False)   # unclipped: selects the session
 
     @property
     def wall_min(self) -> int | None:
@@ -155,6 +160,47 @@ def _int(v) -> int:
         return 0
 
 
+def _windowed(records: Iterable[dict], start: _dt.datetime | None) -> Iterator[tuple]:
+    """(record, timestamp, in_window). A record without a timestamp takes the previous one's, so a
+    session's records before the window are skipped as a block (decision 4 of plugin 1.1)."""
+    last = None
+    for d in records:
+        t = _ts(d.get("timestamp"))
+        last = t or last
+        yield d, t, start is None or last is None or last >= start
+
+
+ORIGINS = ("interactive", "scheduled", "scripted", "unknown")
+ORIGIN_FIELDS = ("turnOrigin", "promptSource")
+
+
+def origin_of(first_user_record: dict, saw_schedule_fire: bool = False) -> str:
+    """Who started a Claude Code session, from its first user record that carries origin fields.
+    The desktop app runs on the SDK, so promptSource "sdk" there is a person typing (checked 2026-10-20)."""
+    r = first_user_record or {}
+    turn, src, entry = r.get("turnOrigin"), r.get("promptSource"), r.get("entrypoint")
+    if saw_schedule_fire or turn == "scheduled":
+        return "scheduled"
+    if turn == "sdk" or entry == "sdk-cli" or (src == "sdk" and entry != "claude-desktop"):
+        return "scripted"
+    if turn == "human" or src in ("typed", "sdk"):
+        return "interactive"
+    return "unknown"
+
+
+def _has_origin(d: dict) -> bool:
+    return any(d.get(k) for k in ORIGIN_FIELDS)
+
+
+def codex_origin(session_meta: dict) -> str:
+    m = session_meta or {}
+    if m.get("originator") == "codex_exec" or m.get("source") == "exec":
+        return "scripted"
+    if isinstance(m.get("source"), str) and m["source"]:
+        return "interactive"   # cli, vscode
+    return "unknown"
+
+
 def _msg(d: dict) -> dict:
     m = d.get("message")
     return m if isinstance(m, dict) else {}
@@ -168,30 +214,40 @@ def _rel(home: Path, p: str | None) -> str:
     return "~" + p[len(h):] if p.lower().startswith(h.lower()) else p
 
 
-def _claude_session(path: Path, home: Path, surface: str) -> Session:
+def _claude_session(path: Path, home: Path, surface: str, window_start: _dt.datetime | None = None) -> Session:
     skipped: list = []
     s = Session(id=path.stem[:8], surface=surface, path=path, project_key="?")
-    times, turn_ms, cwd = [], 0, None
-    for d in _records(path, skipped):
-        t = _ts(d.get("timestamp"))
-        if t:
-            times.append(t)
+    times, turn_ms, cwd, first_user, fired = [], 0, None, None, False
+    for d, t, inside in _windowed(_records(path, skipped), window_start):
+        s.last_record = max(s.last_record or t, t) if t else s.last_record
         cwd = cwd or d.get("cwd")
+        if "scheduled_task_fire" in (d.get("type"), d.get("subtype")) and not s.total_prompts:
+            fired = True
+        if not inside:
+            s.records_before_window += 1
+        elif t:
+            times.append(t)
         typ = d.get("type")
         if typ == "ai-title":
             s.title = d.get("aiTitle") or d.get("title") or s.title
-        elif typ == "system" and d.get("subtype") == "turn_duration":
+        elif typ == "system" and d.get("subtype") == "turn_duration" and inside:
             turn_ms += _int(d.get("durationMs"))
         elif typ == "assistant" and not s.model:
             s.model = _msg(d).get("model")
         elif typ == "user" and not d.get("isSidechain") and not d.get("isMeta"):
+            if first_user is None or (not _has_origin(first_user) and _has_origin(d)):
+                first_user = d   # a leading local /command often carries no origin fields
             h = _text_of(_msg(d).get("content"))
             if h and CMD.search(h):
-                s.prompts += 1
-                s.slash_commands.append(CMD.search(h).group(1))
+                s.total_prompts += 1
+                s.prompts += inside
+                if inside:
+                    s.slash_commands.append(CMD.search(h).group(1))
             elif _is_human(h) and "[Request interrupted" not in h:
-                s.prompts += 1
+                s.total_prompts += 1
+                s.prompts += inside
     s.skipped_lines = len(skipped)
+    s.origin = origin_of(first_user, fired)
     s.project_key = _rel(home, cwd)
     s.active_buckets = _buckets(times)
     if times:
@@ -203,13 +259,15 @@ def _claude_session(path: Path, home: Path, surface: str) -> Session:
     return s
 
 
-def _codex_session(path: Path, home: Path) -> Session | None:
+def _codex_session(path: Path, home: Path, window_start: _dt.datetime | None = None) -> Session | None:
     skipped: list = []
     s = Session(id=path.stem[-8:], surface="codex", path=path, project_key="?")
     times, task_ms, cwd, meta = [], 0, None, {}
-    for d in _records(path, skipped):
-        t = _ts(d.get("timestamp"))
-        if t:
+    for d, t, inside in _windowed(_records(path, skipped), window_start):
+        s.last_record = max(s.last_record or t, t) if t else s.last_record
+        if not inside:
+            s.records_before_window += 1
+        elif t:
             times.append(t)
         p = d.get("payload") if isinstance(d.get("payload"), dict) else {}
         typ = d.get("type")
@@ -219,14 +277,16 @@ def _codex_session(path: Path, home: Path) -> Session | None:
         elif typ == "turn_context":
             cwd = cwd or p.get("cwd")
             s.model = s.model or p.get("model")
-        elif typ == "event_msg" and p.get("type") == "task_complete":
+        elif typ == "event_msg" and p.get("type") == "task_complete" and inside:
             task_ms += _int(p.get("duration_ms"))
         elif typ == "response_item" and p.get("type") == "message" and p.get("role") == "user":
             if _is_human(_text_of(p.get("content"))):
-                s.prompts += 1
+                s.total_prompts += 1
+                s.prompts += inside
     if meta.get("forked_from_id") or meta.get("parent_thread_id"):
         return None   # child threads are part of their root's work
     s.skipped_lines = len(skipped)
+    s.origin = codex_origin(meta)
     s.project_key = _rel(home, cwd)
     s.active_buckets = _buckets(times)
     if times:
@@ -331,9 +391,21 @@ def transcript_files(home: Path, chat_dir: Path | None = None) -> dict[str, list
     return out
 
 
+def oldest_record(files: Iterable[Path]) -> _dt.datetime | None:
+    """The earliest first timestamp across transcript files (each file is read only up to its first one)."""
+    oldest = None
+    for f in files:
+        t = next((t for t in (_ts(d.get("timestamp")) for d in _records(f)) if t), None)
+        if t and (oldest is None or t < oldest):
+            oldest = t
+    return oldest
+
+
 def sessions(home: Path, window_days: int = 30, now: _dt.datetime | None = None,
              min_prompts: int = 1, chat_dir: Path | None = None) -> list[Session]:
-    """All root sessions with activity inside the window and at least `min_prompts` prompts.
+    """All root sessions whose last record falls inside the window and that have at least `min_prompts`
+    prompts over their life. Times, active time, buckets and prompts count only records inside the
+    window, so a long-lived session contributes only its in-window work; it is never dropped for it.
     chat_dir: transcripts made by import_chat_export (their file times are import times, so not used to skip)."""
     home = Path(home)
     now = now or _dt.datetime.now(_dt.timezone.utc)
@@ -350,14 +422,15 @@ def sessions(home: Path, window_days: int = 30, now: _dt.datetime | None = None,
         for f in files[surface]:
             if (surface != "chat" and stale(f)) or not f.is_file():
                 continue
-            found.append(_claude_session(f, home, surface))
+            found.append(_claude_session(f, home, surface, cut))
     for f in files["codex"]:
         if stale(f):
             continue
-        s = _codex_session(f, home)
+        s = _codex_session(f, home, cut)
         if s:
             found.append(s)
-    keep = [s for s in found if s.ended and cut <= s.ended <= now + _dt.timedelta(days=1) and s.prompts >= min_prompts]
+    keep = [s for s in found if s.last_record and cut <= s.last_record <= now + _dt.timedelta(days=1)
+            and s.total_prompts >= min_prompts]
     return sorted(keep, key=lambda s: s.started)
 
 
@@ -473,10 +546,20 @@ chat cowork local sessions session present reason unknown memory report reports 
 COMMON |= {"claude_code", "true", "false", "null", "none", "full", "light", "observed_trace", "config_inspection"}
 
 
+# Product names folders are often called after; masking them hides tools, not clients. Folder-derived
+# terms only: a name the participant gives is masked even when it is or contains one.
+PRODUCT_WORDS = {"claude code", "claude-code", "claudecode", "onedrive", "icloud", "dropbox", "google drive"}
+
+
 def _variants(name: str) -> set[str]:
     base = name.strip()
     return {v for v in {base, base.replace("-", " "), base.replace("_", " "), base.replace("-", ""), base.replace("_", "")}
             if len(v) >= 4 and v.lower() not in COMMON}
+
+
+def folder_variants(folder: str) -> set[str]:
+    """The terms a project folder's name masks: its variants, minus ordinary words and product names."""
+    return {v for v in _variants(folder) if v.lower() not in PRODUCT_WORDS}
 
 
 class AliasTable:
@@ -544,7 +627,7 @@ class AliasTable:
             base = key.replace("\\", "/").rstrip("/").split("/")[-1]
             if base.lower() in {k.lower() for k in self.keep}:
                 continue
-            for v in _variants(base):
+            for v in folder_variants(base):
                 terms.setdefault(v, label)
         for name, rep in ((nfc(n), r) for n, r in self.names.items()):
             for v in _variants(name) | {name}:
@@ -582,7 +665,13 @@ class AliasTable:
             if isinstance(o, list):
                 return [walk(x) for x in o]
             if isinstance(o, dict):
-                return {walk(k): walk(v, k) for k, v in o.items()}
+                out = {}
+                for k, v in o.items():
+                    mk, mv = walk(k), walk(v, k)
+                    num = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool)  # noqa: E731
+                    # two names under one label: a count keyed by name adds up instead of one overwriting the other
+                    out[mk] = out[mk] + mv if mk in out and num(out[mk]) and num(mv) else mv
+                return out
             return o
         if jsonl:
             out = []
@@ -655,16 +744,19 @@ def skeleton(session: Session, max_chars: int = 60000, aliases: AliasTable | Non
     proj = aliases.label(session.project_key) if aliases else session.project_key
     head = (f"# session {session.id} · {session.surface} · project {proj} · "
             f"{session.started.date() if session.started else '?'} · {session.wall_min} min wall · "
-            f"{round(session.active_ms / 60000, 1)} min active · prompts {session.prompts}")
+            f"{round(session.active_ms / 60000, 1)} min active · prompts {session.prompts} · origin {session.origin}")
     lines: list[str] = []
+    if session.records_before_window:
+        lines.append(f"[{session.records_before_window} earlier records before the window skipped]")
     t0 = session.started
+    records = (d for d, _, inside in _windowed(_records(session.path), t0) if inside)
 
     def at(d) -> str:
         t = _ts(d.get("timestamp"))
         return f"[+{int((t - t0).total_seconds() // 60)}m] " if t and t0 else ""
 
     if session.surface == "codex":
-        for d in _records(session.path):
+        for d in records:
             p = d.get("payload") if isinstance(d.get("payload"), dict) else {}
             if d.get("type") != "response_item":
                 continue
@@ -682,7 +774,7 @@ def skeleton(session: Session, max_chars: int = 60000, aliases: AliasTable | Non
                 m = re.search(r'(?:cmd|command)\\?"\s*:\s*\\?"([^"\\]{0,80})', arg)
                 lines.append(f"  tool {p.get('name')} {_clip(m.group(1), 70, aliases) if m else ''}".rstrip())
     else:
-        for d in _records(session.path):
+        for d in records:
             if d.get("isSidechain"):
                 continue
             typ, msg = d.get("type"), _msg(d)

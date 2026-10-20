@@ -29,6 +29,8 @@ import evidence  # noqa: E402
 import validate  # noqa: E402
 
 FULL_CAP, LIGHT_CAP = 150, 40
+AUTOMATED = ("scheduled", "scripted")   # session origins whose sessions no person started
+AUTOMATED_SHARE = 0.25
 COMPARED = ("work_kind", "work_category", "workflow", "pipeline_stage", "start_trigger", "interaction_mode", "outcome", "dictation_markers")
 
 
@@ -63,7 +65,19 @@ def _rank(sid: str) -> str:
 
 
 def sample(sessions, cap: int) -> list:
-    """Deterministic, proportional by surface, at least min(20, available) per surface."""
+    """Deterministic. Automated sessions (scheduled, scripted) take at most a quarter of the cap and
+    the rest goes to everything else, so pipelines stay visible without crowding out a person's own
+    work; when there is too little of the rest, the sample stays under the cap rather than refill
+    with automated sessions. This holds below the cap too. Within each group: proportional by surface,
+    at least min(20, available)."""
+    auto = [s for s in sessions if s.origin in AUTOMATED]
+    rest = [s for s in sessions if s.origin not in AUTOMATED]
+    n_auto = min(len(auto), round(AUTOMATED_SHARE * cap))
+    picked = _by_surface(auto, n_auto) + _by_surface(rest, min(len(rest), cap - n_auto))
+    return sorted(picked, key=lambda s: s.started)
+
+
+def _by_surface(sessions, cap: int) -> list:
     if len(sessions) <= cap:
         return list(sessions)
     by = collections.defaultdict(list)
@@ -76,7 +90,7 @@ def sample(sessions, cap: int) -> list:
     picked = []
     for k, v in by.items():
         picked += sorted(v, key=lambda s: _rank(s.id))[:quota[k]]
-    return sorted(picked, key=lambda s: s.started)
+    return picked
 
 
 def eligible(s) -> bool:
@@ -88,17 +102,20 @@ def cmd_plan(m: Map, a) -> dict:
     ss = [s for s in m.run.sessions(1) if eligible(s)]
     cap = int(a.get("--cap") or (LIGHT_CAP if a.get("--light") is not None else FULL_CAP))
     picked = sample(ss, cap)
-    q = [{"session": s.id, "surface": s.surface, "path": str(s.path)} for s in picked]
+    q = [{"session": s.id, "surface": s.surface, "origin": s.origin, "path": str(s.path)} for s in picked]
     m.path("queue.json").write_text(json.dumps(q, indent=1), encoding="utf-8")
     n2 = int(a.get("--second") or 15)
     verify = sorted(q, key=lambda x: _rank("v" + x["session"]))[:n2]
     m.path("queue-verify.json").write_text(json.dumps(verify, indent=1), encoding="utf-8")
     for d in ("claims", "claims-verify"):
         (m.dir / d).mkdir(exist_ok=True)
-    info = {"eligible": len(ss), "queued": len(q), "sampled": len(q) < len(ss), "cap": cap}
+    in_window = collections.Counter(s.origin for s in m.run.sessions(1))
+    el, sa = collections.Counter(s.origin for s in ss), collections.Counter(x["origin"] for x in q)
+    by_origin = {o: {"in_window": in_window[o], "eligible": el[o], "sampled": sa[o]} for o in evidence.ORIGINS if in_window[o]}
+    info = {"eligible": len(ss), "queued": len(q), "sampled": len(q) < len(ss), "cap": cap, "by_origin": by_origin}
     m.path("plan.json").write_text(json.dumps(info), encoding="utf-8")
     return {"eligible": len(ss), "queued": len(q), "sampled": len(q) < len(ss),
-            "by_surface": dict(collections.Counter(x["surface"] for x in q)), "second_coder": len(verify)}
+            "by_surface": dict(collections.Counter(x["surface"] for x in q)), "by_origin": by_origin, "second_coder": len(verify)}
 
 
 def _claim(m: Map, pass_: str, sid: str, agent: str) -> bool:
@@ -160,6 +177,9 @@ def cmd_submit(m: Map, agent: str, pass_: str, raw: str) -> tuple[int, dict]:
     errs = validate.validate(rec, validate.load_schema("session-record"))
     if errs:
         return 1, {"accepted": False, "reason": "schema", "errors": errs[:10]}
+    origin = next((x.get("origin") for x in m.queue(pass_) if x["session"] == sid), None)
+    if origin in AUTOMATED and rec.get("start_trigger") != "automated":
+        return 1, {"accepted": False, "reason": f"the skeleton header says origin {origin}: start_trigger must be \"automated\""}
     text = m.run.aliases().mask(evidence.mask_secrets(json.dumps(rec, ensure_ascii=False)))
     with open(m.path("records.jsonl" if pass_ == "map" else "records-verify.jsonl"), "a", encoding="utf-8") as fh:
         fh.write(text + "\n")
